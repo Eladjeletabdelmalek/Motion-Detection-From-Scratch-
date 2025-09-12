@@ -25,12 +25,11 @@ def update_background(actual_img,background_img,alpha,motion_mask):
 
     # Normalize mask to 0/1
     motion_mask = (motion_mask > 0).astype(float)
-
-    # Only update non-motion pixels (1 - motion_mask)
-    new_background = alpha * np_actual * (1 - motion_mask) + \
-                     np_background * motion_mask + \
-                     (1 - alpha) * np_background * (1 - motion_mask)
-
+    static_mask = 1 - motion_mask
+    
+    new_background = np_background * motion_mask + \
+                 ((1 - alpha) * np_background + alpha * np_actual) * static_mask
+                 
     return new_background.astype(np.uint8)
 
 
@@ -44,7 +43,7 @@ ret,background=cap.read()
 if not ret :
     print("frame got captured correctly")
     cap.release()
-    cap.exit()
+    exit()
     
 while True:
     
@@ -57,14 +56,14 @@ while True:
         break
     
     abs_diff=Background_Substraction(actual_img=frame,background_img=background)
-    motion=detect_motion(abs_diff=abs_diff,threshold=30)
-    background=update_background(actual_img=frame,background_img=background,alpha=0.01,motion_mask=motion)
+    motion=detect_motion(abs_diff=abs_diff,threshold=15)
+    kernel = np.ones((3,3), np.uint8)
+    motion = cv.morphologyEx(motion, cv.MORPH_OPEN, kernel)
+    motion = cv.morphologyEx(motion, cv.MORPH_DILATE, kernel)
+    background=update_background(actual_img=frame,background_img=background,alpha=0.005,motion_mask=motion)
     contours, _ = cv.findContours(motion, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-    kernel = np.ones((5,5), np.uint8)
-    motion = cv.morphologyEx(motion, cv.MORPH_OPEN, kernel)   # remove noise
-    motion = cv.morphologyEx(motion, cv.MORPH_DILATE, kernel) # enlarge motion areas
     for cnt in contours:
-        if cv.contourArea(cnt) < 500:  # filter small noise
+        if cv.contourArea(cnt) < 30:  # filter small noise
             continue
         x, y, w, h = cv.boundingRect(cnt)
         cv.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
@@ -75,6 +74,8 @@ while True:
     cv.imshow('frame', frame)
     if cv.waitKey(1) == ord('q'):
         break
+    else:
+        continue
 
 # When everything done, release the capture
 cap.release()
