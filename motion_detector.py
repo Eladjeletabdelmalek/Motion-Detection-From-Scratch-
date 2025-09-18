@@ -25,8 +25,8 @@ def update_background(actual_img, background_img, alpha, motion_mask):
 
     # Instead of blocking update completely on motion areas,
     # allow *slow* update there too
-    update_rate = (1 - motion_mask) * alpha + motion_mask * (alpha * 0.1)
-
+    #update_rate = (1 - motion_mask) * alpha + motion_mask * (alpha * 0.1)
+    update_rate=alpha
     new_background = (1 - update_rate) * np_background + update_rate * np_actual
 
     return new_background.astype(np.uint8)
@@ -55,18 +55,18 @@ while True:
     frame_blur = cv.GaussianBlur(frame, (5,5), 0)
 
     abs_diff = Background_Substraction(frame_blur, background)
-    motion = detect_motion(abs_diff, threshold=50)
+    motion = detect_motion(abs_diff, threshold=30)
     
     kernel = np.ones((5,5), np.uint8)
     motion = cv.morphologyEx(motion, cv.MORPH_OPEN, kernel)
     motion = cv.morphologyEx(motion, cv.MORPH_CLOSE, kernel)
 
-    background = update_background(frame_blur, background, alpha=0.02, motion_mask=motion)
+    background = update_background(frame_blur, background, alpha=0.05, motion_mask=motion)
     print("Mean background value:", np.mean(background))
 
     contours, _ = cv.findContours(motion, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
     for cnt in contours:
-        if cv.contourArea(cnt) < 150:  # reduce false positives
+        if cv.contourArea(cnt) < 50:  # reduce false positives
             continue
         x, y, w, h = cv.boundingRect(cnt)
         cv.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
