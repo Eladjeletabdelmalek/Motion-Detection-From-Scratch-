@@ -14,23 +14,23 @@ def detect_motion(abs_diff,threshold):
     
     
     
-def update_background(actual_img,background_img,alpha,motion_mask):
-    
-    np_actual=np.array(actual_img,dtype=float)
-    np_background=np.array(background_img,dtype=float)
-    
-    # Expand mask to 3 channels if RGB
-    if len(np_actual.shape) == 3 and motion_mask.ndim == 2:
-        motion_mask = np.stack([motion_mask]*3, axis=-1)
+def update_background(actual_img, background_img, alpha, motion_mask):
+    np_actual = actual_img.astype(np.float32)
+    np_background = background_img.astype(np.float32)
 
-    # Normalize mask to 0/1
-    motion_mask = (motion_mask > 0).astype(float)
-    static_mask = 1 - motion_mask
-    
-    new_background = np_background * motion_mask + \
-                 ((1 - alpha) * np_background + alpha * np_actual) * static_mask
-                 
+    if len(np_actual.shape) == 3 and motion_mask.ndim == 2:
+        motion_mask = np.stack([motion_mask] * 3, axis=-1)
+
+    motion_mask = (motion_mask > 0).astype(np.float32)
+
+    # Instead of blocking update completely on motion areas,
+    # allow *slow* update there too
+    update_rate = (1 - motion_mask) * alpha + motion_mask * (alpha * 0.1)
+
+    new_background = (1 - update_rate) * np_background + update_rate * np_actual
+
     return new_background.astype(np.uint8)
+
 
 
 
@@ -39,44 +39,41 @@ cap = cv.VideoCapture(0)
 if not cap.isOpened():
     print("Cannot open camera")
     exit()
-ret,background=cap.read()
-if not ret :
-    print("frame got captured correctly")
+ret, background = cap.read()
+if not ret:
+    print("Failed to capture background frame")
     cap.release()
     exit()
-    
-while True:
-    
-    # Capture frame-by-frame
-    ret, frame = cap.read()
 
-    # if frame is read correctly ret is True
+while True:
+    ret, frame = cap.read()
     if not ret:
-        print("Can't receive frame (stream end?). Exiting ...")
+        print("Can't receive frame. Exiting ...")
         break
+
+    # Preprocess
+    frame_blur = cv.GaussianBlur(frame, (5,5), 0)
+
+    abs_diff = Background_Substraction(frame_blur, background)
+    motion = detect_motion(abs_diff, threshold=50)
     
-    abs_diff=Background_Substraction(actual_img=frame,background_img=background)
-    motion=detect_motion(abs_diff=abs_diff,threshold=15)
-    kernel = np.ones((3,3), np.uint8)
+    kernel = np.ones((5,5), np.uint8)
     motion = cv.morphologyEx(motion, cv.MORPH_OPEN, kernel)
-    motion = cv.morphologyEx(motion, cv.MORPH_DILATE, kernel)
-    background=update_background(actual_img=frame,background_img=background,alpha=0.005,motion_mask=motion)
+    motion = cv.morphologyEx(motion, cv.MORPH_CLOSE, kernel)
+
+    background = update_background(frame_blur, background, alpha=0.02, motion_mask=motion)
+    print("Mean background value:", np.mean(background))
+
     contours, _ = cv.findContours(motion, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
     for cnt in contours:
-        if cv.contourArea(cnt) < 30:  # filter small noise
+        if cv.contourArea(cnt) < 150:  # reduce false positives
             continue
         x, y, w, h = cv.boundingRect(cnt)
         cv.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
 
-    # Display the resulting frames
-    cv.imshow("Subtractor", background)
-    cv.imshow("detection", motion)
-    cv.imshow('frame', frame)
-    if cv.waitKey(1) == ord('q'):
-        break
-    else:
-        continue
+    cv.imshow("Background", background)
+    cv.imshow("Motion Mask", motion)
+    cv.imshow("Frame", frame)
 
-# When everything done, release the capture
-cap.release()
-cv.destroyAllWindows()
+    if cv.waitKey(1) & 0xFF == ord('q'):
+        break
