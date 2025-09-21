@@ -23,8 +23,6 @@ def update_background(actual_img, background_img, alpha, motion_mask):
 
     motion_mask = (motion_mask > 0).astype(np.float32)
 
-    # Instead of blocking update completely on motion areas,
-    # allow *slow* update there too
     #update_rate = (1 - motion_mask) * alpha + motion_mask * (alpha * 0.1)
     update_rate=alpha
     new_background = (1 - update_rate) * np_background + update_rate * np_actual
